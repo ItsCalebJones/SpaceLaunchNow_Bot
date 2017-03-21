@@ -16,12 +16,10 @@ class LaunchLibrarySDK(object):
 
     def get_next_launches(self):
         url = self.api_url + '/launch?next=5&mode=verbose'
-        print url
         return send_request(url, method='GET', headers=headers)
 
     def get_location_by_pad(self, locationId):
         url = '%s/pad/%i?fields=name' % (self.api_url, locationId)
-        print url
         return send_request(url, method='GET', headers=headers)
 
 
