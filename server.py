@@ -26,7 +26,6 @@ class SpaceLaunchNowNotificationServer:
     def __init__(self):
         self.onesignal = OneSignalSdk(AUTH_TOKEN_HERE, APP_ID)
         self.launchLibrary = LaunchLibrarySDK()
-        self.diff = None
         response = self.onesignal.get_app(APP_ID)
         assert response.status_code == 200
         self.app = response.json()
@@ -36,18 +35,16 @@ class SpaceLaunchNowNotificationServer:
         self.twitter = Twitter(
             auth=OAuth(keys['TOKEN_KEY'], keys['TOKEN_SECRET'], keys['CONSUMER_KEY'], keys['CONSUMER_SECRET'])
         )
-        self.twitter_table = db.table('twitter')
         self.launch_table = db.table('launch')
+        self.time_to_next_launch = None
+        self.next_launch = None
 
     def send_to_twitter(self, message, launch):
         # self.twitter.statuses.update(status=message)
         self.twitter.direct_messages.new(
             user="ItsCalebJones",
             text=message)
-        if launch.last_twitter_post is None:
-            self.twitter_table.insert({'launch': launch.launch_id, 'last_twitter_update': time.time()})
-        else:
-            self.twitter_table.update({'last_twitter_update': time.time()}, Query().launch == launch.launch_id)
+        self.launch_table.update({'last_twitter_update': time.time()}, Query().launch == launch.launch_id)
 
     def check_next_launch(self):
         response = self.launchLibrary.get_next_launches()
@@ -58,9 +55,14 @@ class SpaceLaunchNowNotificationServer:
                 current_time = datetime.datetime.utcnow()
                 launch_time = datetime.datetime.utcfromtimestamp(int(launch.net_stamp))
                 if current_time <= launch_time:
-                    self.diff = int((launch_time - current_time).total_seconds())
-                    self.check_twitter(self.diff, launch)
-                    self.check_launch_window(self.diff, launch)
+                    diff = int((launch_time - current_time).total_seconds())
+                    if self.time_to_next_launch is None:
+                        self.time_to_next_launch = diff
+                        self.next_launch = launch
+                    elif diff < self.time_to_next_launch:
+                        self.time_to_next_launch = diff
+                        self.next_launch = launch
+                    self.check_launch_window(diff, launch)
 
     def check_twitter(self, diff, launch):
         if launch.last_twitter_post is not None:
@@ -84,14 +86,17 @@ class SpaceLaunchNowNotificationServer:
                                                                  self.seconds_to_time(diff)), launch)
 
     def check_launch_window(self, diff, launch):
+        self.check_twitter(diff, launch)
+
         # If launch is within 24 hours...
-        if diff <= 86400:
+        if 86400 >= diff > 3600:
             self.send_notification(launch)
             launch.is_notified_24(True)
-        elif diff <= 3600:
+        elif 3600 >= diff > 600:
             self.send_notification(launch)
             launch.is_notified_one_hour(True)
         elif diff <= 600:
+            self.send_notification(launch)
             launch.is_notified_ten_minutes(True)
 
     def send_notification(self, launch):
@@ -130,12 +135,14 @@ class SpaceLaunchNowNotificationServer:
         self.log('Space Launch Now daemon is now running.')
         while True:
             self.check_next_launch()
-            if self.diff > 600:
-                self.log('Next launch in %i, sleeping for %d seconds.' % (self.diff, DAEMON_SLEEP))
+            if self.time_to_next_launch > 600:
+                self.log('Next launch %s in %i hours, sleeping for %d seconds.' % (self.next_launch.launch_name,
+                                                                                   self.time_to_next_launch / 3600,
+                                                                                   DAEMON_SLEEP))
                 time.sleep(DAEMON_SLEEP)
             else:
-                self.log('Sleeping for %d seconds.' % self.diff)
-                time.sleep(self.diff)
+                self.log('Sleeping for %d seconds.' % self.time_to_next_launch)
+                time.sleep(self.time_to_next_launch)
 
     def seconds_to_time(self, seconds):
         seconds_in_day = 86400

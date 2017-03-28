@@ -18,22 +18,29 @@ class Launch:
         if len(launch["missions"]) > 0:
             self.missions = launch["missions"]
 
-        self.twitter_table = db.table('twitter')
+        self.launch_table = db.table('launch')
 
-        response = self.twitter_table.search(Query().launch == self.launch_id)
+        response = self.launch_table.search(Query().launch == self.launch_id)
         if len(response) > 0:
             self.last_twitter_post = response[len(response) - 1]['last_twitter_update']
         else:
             self.last_twitter_post = None
-
-        self.launch_table = db.table('launch')
 
         launch_cache = self.launch_table.search(Query().launch == self.launch_id)
         if launch_cache:
             self.wasNotifiedTwentyFourHour = launch_cache[0]['isNotified24']
             self.wasNotifiedOneHour = launch_cache[0]['isNotifiedOne']
             self.wasNotifiedTenMinutes = launch_cache[0]['isNotifiedTen']
-            self.notified = launch_cache[0]['notified']
+            if launch_cache[0]['net'] != self.net_stamp:
+                self.reset_notifiers()
+        else:
+            self.launch_table.insert({'launch': self.launch_id,
+                                      'last_twitter_update': None,
+                                      'net': self.net_stamp,
+                                      'name': self.launch_name,
+                                      'isNotified24': False,
+                                      'isNotifiedOne': False,
+                                      'isNotifiedTen': False})
 
     def reset_notifiers(self):
         self.wasNotifiedTwentyFourHour = False
@@ -54,17 +61,10 @@ class Launch:
         self.update_record()
 
     def update_record(self):
-        if self.notified is False:
-            self.notified = True
-            self.launch_table.insert({'launch': self.launch_id,
-                                      'isNotified24': self.wasNotifiedTwentyFourHour,
-                                      'isNotifiedOne': self.wasNotifiedOneHour,
-                                      'isNotifiedTen': self.wasNotifiedTenMinutes, 'notified': self.notified})
-        else:
-            self.launch_table.update({'isNotified24': self.wasNotifiedTwentyFourHour,
-                                      'isNotifiedOne': self.wasNotifiedOneHour,
-                                      'isNotifiedTen': self.wasNotifiedTenMinutes, 'notified': self.notified},
-                                     Query().launch == self.launch_id)
+        self.launch_table.update({'isNotified24': self.wasNotifiedTwentyFourHour,
+                                  'isNotifiedOne': self.wasNotifiedOneHour,
+                                  'isNotifiedTen': self.wasNotifiedTenMinutes},
+                                 Query().launch == self.launch_id)
 
 
 
