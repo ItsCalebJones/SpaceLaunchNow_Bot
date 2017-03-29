@@ -11,9 +11,7 @@ class Launch:
         self.net_stamp = launch["netstamp"]
         self.data = launch
         self.notified = False
-
-        if len(launch["location"]["pads"]) > 0:
-            self.location = launch["location"]["pads"][0]["name"]
+        self.location = launch["location"]
 
         if len(launch["missions"]) > 0:
             self.missions = launch["missions"]
