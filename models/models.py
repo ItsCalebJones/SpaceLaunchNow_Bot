@@ -1,6 +1,6 @@
 from tinydb import TinyDB, Query
 
-db = TinyDB('H:\GitHub\Space-Launch-Now-Server\db.json')
+db = TinyDB('db.json')
 
 
 class Launch:
@@ -32,6 +32,7 @@ class Launch:
             if launch_cache[0]['net'] != self.net_stamp:
                 self.reset_notifiers()
         else:
+            self.reset_notifiers()
             self.launch_table.insert({'launch': self.launch_id,
                                       'last_twitter_update': None,
                                       'net': self.net_stamp,

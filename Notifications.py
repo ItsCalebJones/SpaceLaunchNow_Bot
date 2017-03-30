@@ -1,0 +1,145 @@
+import datetime
+import time
+
+import sys
+from tinydb import Query
+from twitter import *
+
+from libraries.launchlibrarysdk import LaunchLibrarySDK
+from libraries.onesignalsdk import OneSignalSdk
+from models.models import Launch
+from utils.config import keys
+from utils.util import db, log, seconds_to_time
+
+AUTH_TOKEN_HERE = keys['AUTH_TOKEN_HERE']
+APP_ID = keys['APP_ID']
+DAEMON_SLEEP = 600
+TAG = 'Notification Server'
+
+
+def main():
+    notification_server = NotificationServer()
+    notification_server.run()
+
+
+class NotificationServer:
+    def __init__(self):
+        self.onesignal = OneSignalSdk(AUTH_TOKEN_HERE, APP_ID)
+        self.launchLibrary = LaunchLibrarySDK()
+        response = self.onesignal.get_app(APP_ID)
+        assert response.status_code == 200
+        self.app = response.json()
+        assert isinstance(self.app, dict)
+        assert self.app['id'] and self.app['name'] and self.app['updated_at'] and self.app['created_at']
+        self.app_auth_key = self.app['basic_auth_key']
+        self.twitter = Twitter(
+            auth=OAuth(keys['TOKEN_KEY'], keys['TOKEN_SECRET'], keys['CONSUMER_KEY'], keys['CONSUMER_SECRET'])
+        )
+        self.launch_table = db.table('launch')
+        self.time_to_next_launch = None
+        self.next_launch = None
+
+    def send_to_twitter(self, message, launch):
+        # self.twitter.statuses.update(status=message)
+        self.twitter.direct_messages.new(
+            user="ItsCalebJones",
+            text=message)
+        self.launch_table.update({'last_twitter_update': time.time()}, Query().launch == launch.launch_id)
+
+    def check_next_launch(self):
+        response = self.launchLibrary.get_next_launches()
+        launch_data = response.json()
+        for launches in launch_data["launches"]:
+            launch = Launch(launches)
+            if launch.net_stamp > 0:
+                current_time = datetime.datetime.utcnow()
+                launch_time = datetime.datetime.utcfromtimestamp(int(launch.net_stamp))
+                if current_time <= launch_time:
+                    diff = int((launch_time - current_time).total_seconds())
+                    if self.time_to_next_launch is None:
+                        self.time_to_next_launch = diff
+                        self.next_launch = launch
+                    elif diff < self.time_to_next_launch:
+                        self.time_to_next_launch = diff
+                        self.next_launch = launch
+                    self.check_launch_window(diff, launch)
+
+    def check_twitter(self, diff, launch):
+        if launch.last_twitter_post is not None:
+            time_since_last_twitter_update = (datetime.datetime.utcnow() - datetime.datetime.utcfromtimestamp(
+                int(launch.last_twitter_post))).total_seconds()
+            log(TAG, 'Seconds since last update on Twitter %d' % time_since_last_twitter_update)
+            if diff < 86400:
+                if diff > 3600:
+                    if time_since_last_twitter_update > 43200:
+                        self.send_to_twitter('%s launching from %s in %s' %
+                                             (launch.launch_name, launch.location['name'], seconds_to_time(diff)),
+                                             launch)
+                if diff < 3600:
+                    if time_since_last_twitter_update > 3600:
+                        self.send_to_twitter('%s launching from %s in %s' %
+                                             (launch.launch_name, launch.location['name'], seconds_to_time(diff)),
+                                             launch)
+        else:
+            log(TAG, 'Launch has not been posted to Twitter.')
+            self.send_to_twitter('%s launching from %s in %s' % (launch.launch_name, launch.location['name'],
+                                                                 seconds_to_time(diff)), launch)
+
+    def check_launch_window(self, diff, launch):
+        self.check_twitter(diff, launch)
+
+        # If launch is within 24 hours...
+        if 86400 >= diff > 3600:
+            self.send_notification(launch)
+            launch.is_notified_24(True)
+        elif 3600 >= diff > 600:
+            self.send_notification(launch)
+            launch.is_notified_one_hour(True)
+        elif diff <= 600:
+            self.send_notification(launch)
+            launch.is_notified_ten_minutes(True)
+
+    def send_notification(self, launch):
+        self.onesignal.user_auth_key = self.app_auth_key
+        self.onesignal.app_id = APP_ID
+        log(TAG, 'Creating notification for %s' % launch.launch_name)
+
+        # Create a notification
+        contents = '%s launching from %s' % (launch.launch_name, launch.location['name'])
+        kwargs = dict(
+            content_available=True,
+            included_segments=['Debug'],
+            isAndroid=True,
+            data={"silent": True}
+        )
+        url = 'https://launchlibrary.net'
+        heading = 'Space Launch Now'
+        response = self.onesignal.create_notification(contents, heading, url, **kwargs)
+        assert response.status_code == 200
+
+        notification_data = response.json()
+        notification_id = notification_data['id']
+        assert notification_data['id'] and notification_data['recipients']
+
+        # Get the notification
+        response = self.onesignal.get_notification(APP_ID, notification_id, self.app_auth_key)
+        notification_data = response.json()
+        assert notification_data['id'] == notification_id
+        assert notification_data['contents']['en'] == contents
+
+    def run(self):
+        """The daemon's main loop for doing work"""
+        log(TAG, 'Daemon is now running.')
+        while True:
+            self.check_next_launch()
+            if self.time_to_next_launch > 600:
+                log(TAG, 'Next launch %s in %i hours, sleeping for %d seconds.' % (self.next_launch.launch_name,
+                                                                                   self.time_to_next_launch / 3600,
+                                                                                   DAEMON_SLEEP))
+                time.sleep(DAEMON_SLEEP)
+            else:
+                log(TAG, 'Sleeping for %d seconds.' % self.time_to_next_launch)
+                time.sleep(self.time_to_next_launch)
+
+if __name__ == '__main__':
+    sys.exit(main())
