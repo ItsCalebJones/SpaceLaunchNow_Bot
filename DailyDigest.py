@@ -1,4 +1,8 @@
+import time
+
+import datetime
 from apscheduler.schedulers.blocking import BlockingScheduler
+from tinydb import Query
 from twitter import *
 from libraries.launchlibrarysdk import LaunchLibrarySDK
 from libraries.onesignalsdk import OneSignalSdk
@@ -37,12 +41,15 @@ class DailyDigestServer:
         self.twitter = Twitter(
             auth=OAuth(keys['TOKEN_KEY'], keys['TOKEN_SECRET'], keys['CONSUMER_KEY'], keys['CONSUMER_SECRET'])
         )
-        self.launch_table = db.table('launch')
+        self.launch_table = db.table('digest')
         self.time_to_next_launch = None
         self.next_launch = None
 
     def run(self, daily=False, weekly=False):
-        """The daemon's main loop for doing work"""
+        """The daemon's main loop for doing work
+        :param weekly:
+        :param daily:
+        """
         if daily:
             self.check_launch_daily()
         if weekly:
@@ -54,18 +61,49 @@ class DailyDigestServer:
         for launch_instance in launch_data:
             launch = Launch(launch_instance)
             if launch.status == 1:
-                launches.append(launch)
-                log(TAG, launches)
+                current_time = datetime.datetime.utcnow()
+                launch_time = datetime.datetime.utcfromtimestamp(int(launch.net_stamp))
+                if (launch_time - current_time).total_seconds() < 172800:
+                    launches.append(launch)
+        self.send_daily_to_twitter(launches)
 
     def check_launch_weekly(self):
         launch_data = self.launchLibrary.get_next_launches().json()['launches']
         log(TAG, launch_data)
 
+    def send_daily_to_twitter(self, launches):
+        log(TAG, "Size %s" % launches)
+        if len(launches) == 0:
+            message = "Daily Digest: There are currently no launches confirmed Go for Launch within the next 24 hours."
+            self.twitter.statuses.update(status=message)
+        if len(launches) == 1:
+            launch = launches[0]
+            current_time = datetime.datetime.utcnow()
+            launch_time = datetime.datetime.utcfromtimestamp(int(launch.net_stamp))
+            message = "Daily Digest: %s launching from %s in %s hours." % (launch.launch_name,
+                                                                           launch.location['name'],
+                                                                           '{0:g}'.format(float(
+                                                                               round(abs(launch_time - current_time)
+                                                                                     .total_seconds() / 3600.0))))
+            self.twitter.statuses.update(status=message)
+        if len(launches) > 1:
+            message = "Daily Digest: There are %s confirmed launches within the next 24 hours." % len(launches)
+            self.twitter.statuses.update(message)
+            for index, launch in launches:
+                current_time = datetime.datetime.utcnow()
+                launch_time = datetime.datetime.utcfromtimestamp(int(launch.net_stamp))
+                message = "Daily Digest #%i: %s launching from %s in %s hours." % (index, launch.launch_name,
+                                                                                   launch.location['name'],
+                                                                                   '{0:g}'.format(float(
+                                                                                       round(abs(
+                                                                                           launch_time - current_time)
+                                                                                             .total_seconds() / 3600.0))))
+                self.twitter.statuses.update(status=message)
+
 
 if __name__ == '__main__':
     scheduler = BlockingScheduler()
-    run_daily()
     scheduler.add_job(run_daily, trigger='cron', day_of_week='mon-sun', hour=8, minute=30)
     scheduler.add_job(run_weekly, trigger='cron', day_of_week='fri', hour=12, minute=30)
-    scheduler.print_jobs()
+    log(TAG, scheduler.print_jobs())
     scheduler.start()
