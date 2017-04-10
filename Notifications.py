@@ -89,13 +89,13 @@ class NotificationServer:
         self.check_twitter(diff, launch)
 
         # If launch is within 24 hours...
-        if 86400 >= diff > 3600:
+        if 86400 >= diff > 3600 and not launch.wasNotifiedTwentyFourHour:
             self.send_notification(launch)
             launch.is_notified_24(True)
-        elif 3600 >= diff > 600:
+        elif 3600 >= diff > 600 and not launch.wasNotifiedOneHour:
             self.send_notification(launch)
             launch.is_notified_one_hour(True)
-        elif diff <= 600:
+        elif diff <= 600 and not launch.wasNotifiedTenMinutes:
             self.send_notification(launch)
             launch.is_notified_ten_minutes(True)
 
@@ -137,9 +137,13 @@ class NotificationServer:
                                                                                    self.time_to_next_launch / 3600,
                                                                                    DAEMON_SLEEP))
                 time.sleep(DAEMON_SLEEP)
-            else:
-                log(TAG, 'Sleeping for %d seconds.' % self.time_to_next_launch)
+            elif self.time_to_next_launch is not None:
+                log(TAG, 'Next launch %s is imminent, sleeping for %d seconds.' % (self.time_to_next_launch / 3600,
+                                                                                   DAEMON_SLEEP))
                 time.sleep(self.time_to_next_launch)
+            else:
+                log(TAG, 'Sleeping for %d seconds.' % DAEMON_SLEEP)
+                time.sleep(DAEMON_SLEEP)
 
 if __name__ == '__main__':
     sys.exit(main())

@@ -6,7 +6,11 @@ db = TinyDB('db.json')
 
 
 def log(tag, message):
-    print ('%s - %s: %s' % ('{:%H:%M:%S %m-%d-%Y}'.format(datetime.datetime.now()), tag, message))
+    log_message = ('%s - %s: %s' % ('{:%H:%M:%S %m-%d-%Y}'.format(datetime.datetime.now()), tag, message))
+    print log_message
+    f = open('spacelaunchnow.log', 'a')
+    f.write(log_message + '\n')  # python will convert \n to os.linesep
+    f.close()  # you can omit in most cases as the destructor will call it
 
 
 def seconds_to_time(seconds):
@@ -22,4 +26,9 @@ def seconds_to_time(seconds):
 
     minutes = seconds // seconds_in_minute
     seconds -= minutes * seconds_in_minute
-    return "{0:.0f} days, {1:.0f} hours, {2:.0f} minutes.".format(days, hours, minutes, seconds)
+    if days > 0:
+        return "{0:.0f} days, {1:.0f} hours, {2:.0f} minutes.".format(days, hours, minutes, seconds)
+    elif hours > 0:
+        return "{0:.0f} hours, {1:.0f} minutes.".format(hours, minutes, seconds)
+    elif minutes > 0:
+        return "{0:.0f} minutes.".format(minutes, seconds)
