@@ -123,5 +123,5 @@ if __name__ == '__main__':
     scheduler = BlockingScheduler()
     scheduler.add_job(run_daily, trigger='cron', day_of_week='mon-sun', hour=10, minute=30)
     scheduler.add_job(run_weekly, trigger='cron', day_of_week='fri', hour=12, minute=30)
-    log(TAG, scheduler.print_jobs())
+    log(TAG, "Scheduler-" + scheduler.print_jobs())
     scheduler.start()
