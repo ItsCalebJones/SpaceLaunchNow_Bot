@@ -1,6 +1,8 @@
 import time
 
 import datetime
+
+import re
 from apscheduler.schedulers.blocking import BlockingScheduler
 from tinydb import Query
 from twitter import *
@@ -8,7 +10,7 @@ from libraries.launchlibrarysdk import LaunchLibrarySDK
 from libraries.onesignalsdk import OneSignalSdk
 from models.models import Launch
 from utils.config import keys
-from utils.util import db, log
+from utils.util import db, log, log_error
 
 AUTH_TOKEN_HERE = keys['AUTH_TOKEN_HERE']
 APP_ID = keys['APP_ID']
@@ -60,10 +62,10 @@ class DailyDigestServer:
         launches = []
         for launch_instance in launch_data:
             launch = Launch(launch_instance)
-            if launch.status == 1:
+            if launch.status == 1 and launch.net_stamp > 0:
                 current_time = datetime.datetime.utcnow()
                 launch_time = datetime.datetime.utcfromtimestamp(int(launch.net_stamp))
-                if (launch_time - current_time).total_seconds() < 172800:
+                if (launch_time - current_time).total_seconds() < 86400:
                     launches.append(launch)
         self.send_daily_to_twitter(launches)
 
@@ -73,37 +75,52 @@ class DailyDigestServer:
 
     def send_daily_to_twitter(self, launches):
         log(TAG, "Size %s" % launches)
+        header = "Daily Digest %s:" % time.strftime("%-m/%d")
         if len(launches) == 0:
-            message = "Daily Digest: There are currently no launches confirmed Go for Launch within the next 24 hours."
-            self.twitter.statuses.update(status=message)
+            message = "%s There are currently no launches confirmed Go for Launch within the next 24 hours." % header
+            self.send_twitter_update(message)
         if len(launches) == 1:
             launch = launches[0]
             current_time = datetime.datetime.utcnow()
             launch_time = datetime.datetime.utcfromtimestamp(int(launch.net_stamp))
-            message = "Daily Digest: %s launching from %s in %s hours." % (launch.launch_name,
-                                                                           launch.location['name'],
-                                                                           '{0:g}'.format(float(
-                                                                               round(abs(launch_time - current_time)
-                                                                                     .total_seconds() / 3600.0))))
-            self.twitter.statuses.update(status=message)
+            message = "%s %s launching from %s in %s hours." % (header, launch.launch_name, launch.location['name'],
+                                                                '{0:g}'.format(float(round(abs
+                                                                                           (launch_time - current_time)
+                                                                                           .total_seconds() / 3600.0))))
+            self.send_twitter_update(message)
         if len(launches) > 1:
-            message = "Daily Digest: There are %s confirmed launches within the next 24 hours." % len(launches)
-            self.twitter.statuses.update(status=message)
+            message = "%s There are %i confirmed launches within the next 24 hours...(1/%i)" % (header,
+                                                                                                len(launches),
+                                                                                                len(launches) + 1)
+            self.send_twitter_update(message)
             for index, launch in enumerate(launches, start=1):
                 current_time = datetime.datetime.utcnow()
                 launch_time = datetime.datetime.utcfromtimestamp(int(launch.net_stamp))
-                message = "Launch #%i: %s launching from %s in %s hours." % (index, launch.launch_name,
-                                                                             launch.location['name'],
-                                                                             '{0:g}'.format(float(
-                                                                                 round(abs(
-                                                                                     launch_time - current_time)
-                                                                                       .total_seconds() / 3600.0))))
-                self.twitter.statuses.update(status=message)
+                message = "%s launching from %s in %s hours. (%i/%i)" % (launch.launch_name,
+                                                                         launch.location['name'],
+                                                                         '{0:g}'.format(float(
+                                                                             round(abs(
+                                                                                 launch_time - current_time)
+                                                                                   .total_seconds() / 3600.0))),
+                                                                         index + 1, len(launches) + 1)
+                self.send_twitter_update(message)
+
+    def send_twitter_update(self, message):
+        try:
+            if len(message) > 120:
+                end = message[-5:]
+                if re.search("([1-9]*/[1-9])", end):
+                    message = (message[:111] + '... ' + end)
+                else:
+                    message = (message[:117] + '...')
+            log(TAG, message + " | " + str(len(message)))
+            self.twitter.statuses.update(status=message)
+        except TwitterHTTPError as e:
+            log_error(TAG, str(e) + " - " + message)
 
 
 if __name__ == '__main__':
     scheduler = BlockingScheduler()
-    run_daily()
     scheduler.add_job(run_daily, trigger='cron', day_of_week='mon-sun', hour=10, minute=30)
     scheduler.add_job(run_weekly, trigger='cron', day_of_week='fri', hour=12, minute=30)
     log(TAG, scheduler.print_jobs())

@@ -13,6 +13,14 @@ def log(tag, message):
     f.close()  # you can omit in most cases as the destructor will call it
 
 
+def log_error(tag, message):
+    log_message = ('ERROR: %s - %s: %s' % ('{:%H:%M:%S %m-%d-%Y}'.format(datetime.datetime.now()), tag, message))
+    print log_message
+    f = open('spacelaunchnow.log', 'a')
+    f.write(log_message + '\n')  # python will convert \n to os.linesep
+    f.close()  # you can omit in most cases as the destructor will call it
+
+
 def seconds_to_time(seconds):
     seconds_in_day = 86400
     seconds_in_hour = 3600
