@@ -88,22 +88,23 @@ class DailyDigestServer:
             self.twitter.statuses.update(status=message)
         if len(launches) > 1:
             message = "Daily Digest: There are %s confirmed launches within the next 24 hours." % len(launches)
-            self.twitter.statuses.update(message)
-            for index, launch in launches:
+            self.twitter.statuses.update(status=message)
+            for index, launch in enumerate(launches, start=1):
                 current_time = datetime.datetime.utcnow()
                 launch_time = datetime.datetime.utcfromtimestamp(int(launch.net_stamp))
-                message = "Daily Digest #%i: %s launching from %s in %s hours." % (index, launch.launch_name,
-                                                                                   launch.location['name'],
-                                                                                   '{0:g}'.format(float(
-                                                                                       round(abs(
-                                                                                           launch_time - current_time)
-                                                                                             .total_seconds() / 3600.0))))
+                message = "Launch #%i: %s launching from %s in %s hours." % (index, launch.launch_name,
+                                                                             launch.location['name'],
+                                                                             '{0:g}'.format(float(
+                                                                                 round(abs(
+                                                                                     launch_time - current_time)
+                                                                                       .total_seconds() / 3600.0))))
                 self.twitter.statuses.update(status=message)
 
 
 if __name__ == '__main__':
     scheduler = BlockingScheduler()
-    scheduler.add_job(run_daily, trigger='cron', day_of_week='mon-sun', hour=8, minute=30)
+    run_daily()
+    scheduler.add_job(run_daily, trigger='cron', day_of_week='mon-sun', hour=10, minute=30)
     scheduler.add_job(run_weekly, trigger='cron', day_of_week='fri', hour=12, minute=30)
     log(TAG, scheduler.print_jobs())
     scheduler.start()
