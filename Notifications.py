@@ -1,7 +1,6 @@
 import datetime
 import time
 
-import sys
 from tinydb import Query
 from twitter import *
 
@@ -17,13 +16,8 @@ DAEMON_SLEEP = 600
 TAG = 'Notification Server'
 
 
-def main():
-    notification_server = NotificationServer()
-    notification_server.run()
-
-
 class NotificationServer:
-    def __init__(self):
+    def __init__(self, scheduler):
         self.onesignal = OneSignalSdk(AUTH_TOKEN_HERE, APP_ID)
         self.launchLibrary = LaunchLibrarySDK()
         response = self.onesignal.get_app(APP_ID)
@@ -38,12 +32,11 @@ class NotificationServer:
         self.launch_table = db.table('launch')
         self.time_to_next_launch = None
         self.next_launch = None
+        self.scheduler = scheduler
 
     def send_to_twitter(self, message, launch):
         # self.twitter.statuses.update(status=message)
-        self.twitter.direct_messages.new(
-            user="ItsCalebJones",
-            text=message)
+        log(TAG, message)
         self.launch_table.update({'last_twitter_update': time.time()}, Query().launch == launch.launch_id)
 
     def check_next_launch(self):
@@ -68,7 +61,7 @@ class NotificationServer:
         if launch.last_twitter_post is not None:
             time_since_last_twitter_update = (datetime.datetime.utcnow() - datetime.datetime.utcfromtimestamp(
                 int(launch.last_twitter_post))).total_seconds()
-            log(TAG, 'Seconds since last update on Twitter %d' % time_since_last_twitter_update)
+            log(TAG, 'Seconds since last update on Twitter %d for %s' % (time_since_last_twitter_update, launch.launch_name))
             if diff < 86400:
                 if diff > 3600:
                     if time_since_last_twitter_update > 43200:
@@ -81,7 +74,7 @@ class NotificationServer:
                                              (launch.launch_name, launch.location['name'], seconds_to_time(diff)),
                                              launch)
         else:
-            log(TAG, 'Launch has not been posted to Twitter.')
+            log(TAG, '%s has not been posted to Twitter.' % launch.launch_name)
             self.send_to_twitter('%s launching from %s in %s' % (launch.launch_name, launch.location['name'],
                                                                  seconds_to_time(diff)), launch)
 
@@ -129,21 +122,20 @@ class NotificationServer:
 
     def run(self):
         """The daemon's main loop for doing work"""
-        log(TAG, 'Daemon is now running.')
-        while True:
-            self.check_next_launch()
-            if self.time_to_next_launch > 600:
-                log(TAG, 'Next launch %s in %i hours, sleeping for %d seconds.' % (self.next_launch.launch_name,
-                                                                                   self.time_to_next_launch / 3600,
-                                                                                   DAEMON_SLEEP))
-                time.sleep(DAEMON_SLEEP)
-            elif self.time_to_next_launch is not None:
-                log(TAG, 'Next launch %s is imminent, sleeping for %d seconds.' % (self.time_to_next_launch / 3600,
-                                                                                   DAEMON_SLEEP))
-                time.sleep(self.time_to_next_launch)
-            else:
-                log(TAG, 'Sleeping for %d seconds.' % DAEMON_SLEEP)
-                time.sleep(DAEMON_SLEEP)
-
-if __name__ == '__main__':
-    sys.exit(main())
+        self.check_next_launch()
+        if self.time_to_next_launch > 600:
+            log(TAG, 'Next launch %s in %i hours, sleeping for %d seconds.' % (self.next_launch.launch_name,
+                                                                               self.time_to_next_launch / 3600,
+                                                                               DAEMON_SLEEP))
+            self.scheduler.add_job(self.run, 'date',
+                                   run_date=datetime.datetime.now() + datetime.timedelta(seconds=DAEMON_SLEEP))
+        elif self.time_to_next_launch is not None:
+            log(TAG, 'Next launch %s is imminent, sleeping for %d seconds.' % (self.time_to_next_launch / 3600,
+                                                                               self.time_to_next_launch))
+            self.scheduler.add_job(self.run, 'date',
+                                   run_date=datetime.datetime.now() + datetime.timedelta(
+                                       seconds=self.time_to_next_launch))
+        else:
+            log(TAG, 'Sleeping for %d seconds.' % DAEMON_SLEEP)
+            self.scheduler.add_job(self.run, 'date', run_date=datetime.datetime.now()
+                                                              + datetime.timedelta(seconds=DAEMON_SLEEP))
