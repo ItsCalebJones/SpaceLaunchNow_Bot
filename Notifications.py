@@ -134,7 +134,7 @@ class NotificationServer:
                                                                                DAEMON_SLEEP))
             self.scheduler.add_job(self.run, 'date',
                                    run_date=datetime.datetime.now() + datetime.timedelta(seconds=DAEMON_SLEEP))
-        elif self.time_to_next_launch is not None:
+        elif self.time_to_next_launch is not None and self.time_to_next_launch > 0:
             log(TAG, 'Next launch %s is imminent, sleeping for %d seconds.' % (self.time_to_next_launch / 3600,
                                                                                self.time_to_next_launch))
             self.scheduler.add_job(self.run, 'date',
