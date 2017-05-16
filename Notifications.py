@@ -42,20 +42,25 @@ class NotificationServer:
     def check_next_launch(self):
         response = self.launchLibrary.get_next_launches()
         launch_data = response.json()
-        for launches in launch_data["launches"]:
-            launch = Launch(launches)
-            if launch.net_stamp > 0:
-                current_time = datetime.datetime.utcnow()
-                launch_time = datetime.datetime.utcfromtimestamp(int(launch.net_stamp))
-                if current_time <= launch_time:
-                    diff = int((launch_time - current_time).total_seconds())
-                    if self.time_to_next_launch is None:
-                        self.time_to_next_launch = diff
-                        self.next_launch = launch
-                    elif diff < self.time_to_next_launch:
-                        self.time_to_next_launch = diff
-                        self.next_launch = launch
-                    self.check_launch_window(diff, launch)
+        if response.status_code is 200:
+            log(TAG, "Found %i launches." % len(launch_data["launches"]))
+            for launches in launch_data["launches"]:
+                launch = Launch(launches)
+                log(TAG, launch.launch_name)
+                if launch.net_stamp > 0:
+                    current_time = datetime.datetime.utcnow()
+                    launch_time = datetime.datetime.utcfromtimestamp(int(launch.net_stamp))
+                    if current_time <= launch_time:
+                        diff = int((launch_time - current_time).total_seconds())
+                        if self.time_to_next_launch is None:
+                            self.time_to_next_launch = diff
+                            self.next_launch = launch
+                        elif diff < self.time_to_next_launch:
+                            self.time_to_next_launch = diff
+                            self.next_launch = launch
+                        self.check_launch_window(diff, launch)
+        else:
+            log(TAG, response)
 
     def check_twitter(self, diff, launch):
         if launch.last_twitter_post is not None:
