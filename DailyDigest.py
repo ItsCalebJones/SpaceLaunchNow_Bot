@@ -114,6 +114,6 @@ class DailyDigestServer:
                 else:
                     message = (message[:117] + '...')
             log(TAG, message + " | " + str(len(message)))
-            # self.twitter.statuses.update(status=message)
+            self.twitter.statuses.update(status=message)
         except TwitterHTTPError as e:
             log_error(TAG, str(e) + " - " + message)

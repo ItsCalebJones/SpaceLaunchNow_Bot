@@ -35,7 +35,7 @@ class NotificationServer:
         self.scheduler = scheduler
 
     def send_to_twitter(self, message, launch):
-        # self.twitter.statuses.update(status=message)
+        self.twitter.statuses.update(status=message)
         log(TAG, message)
         self.launch_table.update({'last_twitter_update': time.time()}, Query().launch == launch.launch_id)
 
