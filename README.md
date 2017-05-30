@@ -1,4 +1,5 @@
-# SpaceLaunchNow Bot (DEPRECATED
-A server componenet for future Space Launch Now features and expansions. (DEPRECATED)
-
+# SpaceLaunchNow Bot (DEPRECATED)
 Future developments found in Space Launch Now - Server repo.
+
+
+A server componenet for future Space Launch Now features and expansions.
